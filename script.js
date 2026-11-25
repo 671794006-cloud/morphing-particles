@@ -36,7 +36,6 @@ const colorB = new THREE.Color(0xc4b5fd);
 for (let i = 0; i < PARTICLE_COUNT; i++) {
   const i3 = i * 3;
 
-  // กระจายจุดแบบสม่ำเสมอบนผิว/ภายในทรงกลม (Fibonacci / Spherical sampling)
   const u = Math.random();
   const v = Math.random();
   const theta = u * 2.0 * Math.PI;
@@ -65,7 +64,6 @@ const geometry = new THREE.BufferGeometry();
 geometry.setAttribute("position", new THREE.BufferAttribute(currentPositions, 3));
 geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
-// สร้าง Texture จุดกลมนุ่มๆ บน offscreen canvas
 function createCircleTexture() {
   const size = 64;
   const offCanvas = document.createElement("canvas");
@@ -103,20 +101,23 @@ const material = new THREE.PointsMaterial({
 const particles = new THREE.Points(geometry, material);
 scene.add(particles);
 
-// 3. แปลงข้อความเป็นตำแหน่งจุด 3D จาก 2D Canvas
+// 3. แปลงข้อความเป็นตำแหน่งจุด 3D (รองรับข้อความยาวไม่จำกัด)
 function createTextPoints(text) {
   const offCanvas = document.createElement("canvas");
-  const width = 1024;
-  const height = 256;
+  const width = 1600;
+  const height = 320;
   offCanvas.width = width;
   offCanvas.height = height;
 
   const ctx = offCanvas.getContext("2d");
   ctx.clearRect(0, 0, width, height);
 
-  // ปรับขนาดฟอนต์อัตโนมัติตามความยาวข้อความ
+  // ปรับขนาดฟอนต์อัตโนมัติตามความยาวข้อความ ไม่ให้ล้นจอ
   const baseFontSize = 150;
-  const fontSize = Math.min(baseFontSize, Math.floor((width * 0.85) / Math.max(text.length * 0.62, 1)));
+  const fontSize = Math.max(
+    24,
+    Math.min(baseFontSize, Math.floor((width * 0.9) / Math.max(text.length * 0.62, 1)))
+  );
 
   ctx.fillStyle = "#ffffff";
   ctx.font = `700 ${fontSize}px system-ui, -apple-system, sans-serif`;
@@ -126,15 +127,15 @@ function createTextPoints(text) {
 
   const imageData = ctx.getImageData(0, 0, width, height).data;
   const validPixels = [];
-  const step = 3; // เว้นระยะสุ่มพิกเซลเพื่อความลื่นและกระจายตัวสวย
+  const step = 3;
 
   for (let y = 0; y < height; y += step) {
     for (let x = 0; x < width; x += step) {
       const alpha = imageData[(y * width + x) * 4 + 3];
       if (alpha > 128) {
         validPixels.push({
-          x: (x / width - 0.5) * 34,
-          y: -(y / height - 0.5) * 8.5,
+          x: (x / width - 0.5) * 44,
+          y: -(y / height - 0.5) * 8.8,
           z: (Math.random() - 0.5) * 0.8,
         });
       }
@@ -147,7 +148,6 @@ function createTextPoints(text) {
     const i3 = i * 3;
     if (validPixels.length > 0) {
       const p = validPixels[i % validPixels.length];
-      // เพิ่มความฟุ้งเล็กน้อยให้ดูมีมิติเหมือนอนุภาค
       targetPositions[i3] = p.x + (Math.random() - 0.5) * 0.18;
       targetPositions[i3 + 1] = p.y + (Math.random() - 0.5) * 0.18;
       targetPositions[i3 + 2] = p.z;
@@ -161,7 +161,7 @@ function createTextPoints(text) {
   return targetPositions;
 }
 
-// 4. ฟังก์ชัน Morph ไปยังตำแหน่งเป้าหมาย (ข้อความหรือทรงกลม)
+// 4. ฟังก์ชัน Morph ไปยังตำแหน่งเป้าหมาย
 let returnTimer = null;
 let activeTweens = [];
 
@@ -195,7 +195,6 @@ function morphToText(text) {
     clearTimeout(returnTimer);
   }
 
-  // หมุนกลุ่มอนุภาคกลับสู่หน้าตรงเล็กน้อยเพื่อให้ตัวอักษรอ่านง่าย
   gsap.to(particles.rotation, {
     x: 0,
     y: 0,
@@ -207,7 +206,6 @@ function morphToText(text) {
   const textPoints = createTextPoints(text.trim());
   morphToPositions(textPoints, 2);
 
-  // ค้างข้อความไว้สักพัก แล้วค่อยกลับเป็นทรงกลมเหมือนในวิดีโอ
   returnTimer = setTimeout(() => {
     morphToCircle();
   }, 4000);
@@ -217,7 +215,7 @@ function morphToCircle() {
   morphToPositions(spherePositions, 2);
 }
 
-// 5. Event Listeners สำหรับปุ่ม Create และปุ่ม Enter
+// 5. Event Listeners
 createBtn.addEventListener("click", () => {
   morphToText(textInput.value);
 });
@@ -229,12 +227,9 @@ textInput.addEventListener("keydown", (e) => {
 });
 
 // 6. Loop แอนิเมชันหลัก
-let isMorphing = false;
-
 function animate() {
   requestAnimationFrame(animate);
 
-  // หมุนช้าๆ ให้ทรงกลมดูมีชีวิตชีวา
   if (!returnTimer) {
     particles.rotation.y += 0.003;
     particles.rotation.x += 0.001;
