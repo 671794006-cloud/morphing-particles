@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morphing Particles To Text</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div class="ui-container">
+    <input
+      type="text"
+      id="textInput"
+      placeholder="Type something..."
+      maxlength="16"
+      autocomplete="off"
+    />
+    <button id="createBtn" type="button">Create</button>
+  </div>
+
+  <!-- Three.js & GSAP via CDN -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

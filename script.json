@@ -1,0 +1,253 @@
+const canvas = document.getElementById("canvas");
+const textInput = document.getElementById("textInput");
+const createBtn = document.getElementById("createBtn");
+
+// 1. ตั้งค่า Scene, Camera และ Renderer
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x050508, 0.012);
+
+const camera = new THREE.PerspectiveCamera(
+  60,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  1000
+);
+camera.position.z = 36;
+
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: "high-performance",
+});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+// 2. สร้างจุดอนุภาค (Particles) รูปทรงกลมเริ่มต้น
+const PARTICLE_COUNT = 12000;
+const SPHERE_RADIUS = 10;
+
+const spherePositions = new Float32Array(PARTICLE_COUNT * 3);
+const currentPositions = new Float32Array(PARTICLE_COUNT * 3);
+const colors = new Float32Array(PARTICLE_COUNT * 3);
+
+const colorA = new THREE.Color(0x8fa8ff);
+const colorB = new THREE.Color(0xc4b5fd);
+
+for (let i = 0; i < PARTICLE_COUNT; i++) {
+  const i3 = i * 3;
+
+  // กระจายจุดแบบสม่ำเสมอบนผิว/ภายในทรงกลม (Fibonacci / Spherical sampling)
+  const u = Math.random();
+  const v = Math.random();
+  const theta = u * 2.0 * Math.PI;
+  const phi = Math.acos(2.0 * v - 1.0);
+  const r = SPHERE_RADIUS * Math.cbrt(0.75 + 0.25 * Math.random());
+
+  const x = r * Math.sin(phi) * Math.cos(theta);
+  const y = r * Math.sin(phi) * Math.sin(theta);
+  const z = r * Math.cos(phi);
+
+  spherePositions[i3] = x;
+  spherePositions[i3 + 1] = y;
+  spherePositions[i3 + 2] = z;
+
+  currentPositions[i3] = x;
+  currentPositions[i3 + 1] = y;
+  currentPositions[i3 + 2] = z;
+
+  const mixedColor = colorA.clone().lerp(colorB, Math.random());
+  colors[i3] = mixedColor.r;
+  colors[i3 + 1] = mixedColor.g;
+  colors[i3 + 2] = mixedColor.b;
+}
+
+const geometry = new THREE.BufferGeometry();
+geometry.setAttribute("position", new THREE.BufferAttribute(currentPositions, 3));
+geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+// สร้าง Texture จุดกลมนุ่มๆ บน offscreen canvas
+function createCircleTexture() {
+  const size = 64;
+  const offCanvas = document.createElement("canvas");
+  offCanvas.width = size;
+  offCanvas.height = size;
+  const ctx = offCanvas.getContext("2d");
+
+  const grad = ctx.createRadialGradient(
+    size / 2,
+    size / 2,
+    0,
+    size / 2,
+    size / 2,
+    size / 2
+  );
+  grad.addColorStop(0, "rgba(255,255,255,1)");
+  grad.addColorStop(0.35, "rgba(255,255,255,0.85)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(offCanvas);
+}
+
+const material = new THREE.PointsMaterial({
+  size: 0.22,
+  map: createCircleTexture(),
+  vertexColors: true,
+  transparent: true,
+  opacity: 0.9,
+  depthWrite: false,
+  blending: THREE.AdditiveBlending,
+});
+
+const particles = new THREE.Points(geometry, material);
+scene.add(particles);
+
+// 3. แปลงข้อความเป็นตำแหน่งจุด 3D จาก 2D Canvas
+function createTextPoints(text) {
+  const offCanvas = document.createElement("canvas");
+  const width = 1024;
+  const height = 256;
+  offCanvas.width = width;
+  offCanvas.height = height;
+
+  const ctx = offCanvas.getContext("2d");
+  ctx.clearRect(0, 0, width, height);
+
+  // ปรับขนาดฟอนต์อัตโนมัติตามความยาวข้อความ
+  const baseFontSize = 150;
+  const fontSize = Math.min(baseFontSize, Math.floor((width * 0.85) / Math.max(text.length * 0.62, 1)));
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `700 ${fontSize}px system-ui, -apple-system, sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, width / 2, height / 2);
+
+  const imageData = ctx.getImageData(0, 0, width, height).data;
+  const validPixels = [];
+  const step = 3; // เว้นระยะสุ่มพิกเซลเพื่อความลื่นและกระจายตัวสวย
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const alpha = imageData[(y * width + x) * 4 + 3];
+      if (alpha > 128) {
+        validPixels.push({
+          x: (x / width - 0.5) * 34,
+          y: -(y / height - 0.5) * 8.5,
+          z: (Math.random() - 0.5) * 0.8,
+        });
+      }
+    }
+  }
+
+  const targetPositions = new Float32Array(PARTICLE_COUNT * 3);
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const i3 = i * 3;
+    if (validPixels.length > 0) {
+      const p = validPixels[i % validPixels.length];
+      // เพิ่มความฟุ้งเล็กน้อยให้ดูมีมิติเหมือนอนุภาค
+      targetPositions[i3] = p.x + (Math.random() - 0.5) * 0.18;
+      targetPositions[i3 + 1] = p.y + (Math.random() - 0.5) * 0.18;
+      targetPositions[i3 + 2] = p.z;
+    } else {
+      targetPositions[i3] = spherePositions[i3];
+      targetPositions[i3 + 1] = spherePositions[i3 + 1];
+      targetPositions[i3 + 2] = spherePositions[i3 + 2];
+    }
+  }
+
+  return targetPositions;
+}
+
+// 4. ฟังก์ชัน Morph ไปยังตำแหน่งเป้าหมาย (ข้อความหรือทรงกลม)
+let returnTimer = null;
+let activeTweens = [];
+
+function morphToPositions(targetArray, duration = 2) {
+  activeTweens.forEach((t) => t.kill());
+  activeTweens = [];
+
+  const positions = geometry.attributes.position.array;
+
+  for (let i = 0; i < positions.length; i += 3) {
+    const tween = gsap.to(positions, {
+      [i]: targetArray[i],
+      [i + 1]: targetArray[i + 1],
+      [i + 2]: targetArray[i + 2],
+      duration,
+      ease: "power2.inOut",
+      onUpdate: () => {
+        if (i === 0) {
+          geometry.attributes.position.needsUpdate = true;
+        }
+      },
+    });
+    activeTweens.push(tween);
+  }
+}
+
+function morphToText(text) {
+  if (!text.trim()) return;
+
+  if (returnTimer) {
+    clearTimeout(returnTimer);
+  }
+
+  // หมุนกลุ่มอนุภาคกลับสู่หน้าตรงเล็กน้อยเพื่อให้ตัวอักษรอ่านง่าย
+  gsap.to(particles.rotation, {
+    x: 0,
+    y: 0,
+    z: 0,
+    duration: 1.2,
+    ease: "power2.out",
+  });
+
+  const textPoints = createTextPoints(text.trim());
+  morphToPositions(textPoints, 2);
+
+  // ค้างข้อความไว้สักพัก แล้วค่อยกลับเป็นทรงกลมเหมือนในวิดีโอ
+  returnTimer = setTimeout(() => {
+    morphToCircle();
+  }, 4000);
+}
+
+function morphToCircle() {
+  morphToPositions(spherePositions, 2);
+}
+
+// 5. Event Listeners สำหรับปุ่ม Create และปุ่ม Enter
+createBtn.addEventListener("click", () => {
+  morphToText(textInput.value);
+});
+
+textInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    morphToText(textInput.value);
+  }
+});
+
+// 6. Loop แอนิเมชันหลัก
+let isMorphing = false;
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  // หมุนช้าๆ ให้ทรงกลมดูมีชีวิตชีวา
+  if (!returnTimer) {
+    particles.rotation.y += 0.003;
+    particles.rotation.x += 0.001;
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// รองรับการย่อ/ขยายหน้าต่างเบราว์เซอร์
+window.addEventListener("resize", () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
